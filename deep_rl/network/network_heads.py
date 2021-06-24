@@ -4,8 +4,65 @@
 # declaration at the top                                              #
 #######################################################################
 
+from argparse import Action
 from .network_utils import *
 from .network_bodies import *
+
+
+class DSFPGNet(nn.Module, BaseNet):
+    def __init__(self,
+                 state_dim,
+                 action_dim,
+                 actor_opt_fn,
+                 critic_opt_fn,
+                 sf_opt_fn,
+                 phi_body=None,
+                 actor_body=None,
+                 critic_body=None,
+                 sf_body=None):
+        super(DSFPGNet, self).__init__()
+        if phi_body is None: phi_body = DummyBody(state_dim)
+        if actor_body is None: actor_body = DummyBody(phi_body.feature_dim)
+        if critic_body is None: critic_body = DummyBody(phi_body.feature_dim)
+        if sf_body is None: sf_body = DummyBody(phi_body.feature_dim + action_dim)
+        self.phi_body = phi_body
+        self.actor_body = actor_body
+        self.critic_body = critic_body
+        self.sf_body = sf_body
+
+        # feature dim is the dim of output of the model
+        self.fc_action = layer_init(nn.Linear(actor_body.feature_dim, action_dim), 1e-3)
+        self.fc_critic = layer_init(nn.Linear(critic_body.feature_dim, 1), 1e-3)
+        # fc_sf should spit out an ouput with dimension = dimension of phi
+        self.fc_sf = layer_init(nn.Linear(sf_body.feature_dim, phi_body.feature_dim), 1e-3)
+
+        self.actor_params = list(self.actor_body.parameters()) + list(self.fc_action.parameters())
+        self.critic_params = list(self.critic_body.parameters()) + list(self.fc_critic.parameters())
+        self.phi_params = list(self.phi_body.parameters())
+        self.sf_params = list(self.sf_body.parameters()) + list(self.fc_sf.parameters())
+        
+        self.actor_opt = actor_opt_fn(self.actor_params + self.phi_params)
+        self.critic_opt = critic_opt_fn(self.critic_params + self.phi_params)
+        self.sf_opt = sf_opt_fn(self.sf_params + self.phi_params)
+        self.to(Config.DEVICE)
+
+    def forward(self, obs):
+        phi = self.feature(obs)
+        action = self.actor(phi)
+        return action
+
+    def feature(self, obs):
+        obs = tensor(obs)
+        return self.phi_body(obs)
+    
+    def actor(self, phi):
+        return torch.tanh(self.fc_action(self.actor_body(phi)))
+
+    def critic(self, psi):
+        return self.fc_critic(self.critic_body(psi))
+
+    def sf(self, phi, a):
+        return self.fc_sf(self.sf_body(torch.cat([phi, a], dim=1)))
 
 
 class VanillaNet(nn.Module, BaseNet):

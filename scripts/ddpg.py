@@ -2,7 +2,9 @@ import sys
 sys.path.append('../')
 from deep_rl import *
 
-def DSFPG_offline(**kwargs):
+select_device(0)
+
+def ddpg_continuous(**kwargs):
     generate_tag(kwargs)
     kwargs.setdefault('log_level', 0)
     config = Config()
@@ -13,12 +15,6 @@ def DSFPG_offline(**kwargs):
     config.max_steps = int(1e6)
     config.eval_interval = int(1e4)
     config.eval_episodes = 20
-
-    # for offline RL setting start
-    config.offline = True
-    config.dataset_name = 'hopper-random-v0'
-
-    # offline setting end
 
     config.network_fn = lambda: DeterministicActorCriticNet(
         config.state_dim, config.action_dim,
@@ -33,7 +29,6 @@ def DSFPG_offline(**kwargs):
         size=(config.action_dim,), std=LinearSchedule(0.2))
     config.warm_up = int(1e4)
     config.target_network_mix = 5e-3
-    run_steps(DSFPGAgent(config))
+    run_steps(DDPGAgent(config))
 
-
-DSFPG_offline(game='Hopper-v2', dataset_name='hopper-random-v0')
+ddpg_continuous(game='Hopper-v2')

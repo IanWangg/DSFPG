@@ -11,6 +11,7 @@ import torchvision
 
 # for offline training
 import d4rl
+import gym
 
 
 '''
@@ -31,8 +32,8 @@ class DSFPGAgent(BaseAgent):
         self.total_steps = 0
         self.state = None
 
-        assert config.train_what in ['SF', 'ALL']
-        self.train_what = config.train_what
+        # assert config.train_what in ['SF', 'ALL']
+        # self.train_what = config.train_what
 
         # flag that idicate offline/online setting
         self.offline = config.offline
@@ -52,16 +53,16 @@ class DSFPGAgent(BaseAgent):
         actions = self.dataset['actions']
         observations = self.dataset['observations']
         terminals = self.dataset['terminals']
-        reward = self.dataset['rewards']
+        rewards = self.dataset['rewards']
 
-        for i in range(len(reward) - 1):
+        for i in range(len(rewards) - 1):
             # if the next state is still within the same episode
             if not terminals[i]:
-                obs = observations[i]
-                action = actions[i]
-                next_obs = observations[i]
-                reward = rewards[i]
-                done = terminals[i+1]
+                obs = observations[i].reshape(1, -1)
+                action = actions[i].reshape(1, -1)
+                next_obs = observations[i].reshape(1, -1)
+                reward = rewards[i].reshape(1, -1)
+                done = terminals[i+1].reshape(1, -1)
                 self.replay.feed(dict(
                     state=obs,
                     action=action,
@@ -69,11 +70,6 @@ class DSFPGAgent(BaseAgent):
                     next_state=next_obs,
                     mask=1-np.asarray(done, dtype=np.int32),
                 ))
-
-        print('Offline Replay Buffer Prepared Successfully')
-
-
-
     def soft_update(self, target, src):
         for target_param, param in zip(target.parameters(), src.parameters()):
             target_param.detach_()
@@ -92,14 +88,80 @@ class DSFPGAgent(BaseAgent):
             self.step_offline()
         else:
             self.step_online()
+    
+    def unsupervised_step(self):
+        pass
 
     def step_offline(self):
+        self.total_steps += 1
+        config = self.config
         transitions = self.replay.sample()
         states = tensor(transitions.state)
         actions = tensor(transitions.action)
         rewards = tensor(transitions.reward).unsqueeze(-1)
         next_states = tensor(transitions.next_state)
         mask = tensor(transitions.mask).unsqueeze(-1)
+
+        
+        # get next observation
+        phi_next = self.target_network.feature(next_states)
+        phi = self.target_network.feature(states)
+        # get next action
+        a_next = self.target_network.actor(phi_next)
+        # get next psi value
+        sf_next = self.target_network.sf(phi_next, a_next)
+        # get next q value
+        q_next = self.target_network.critic(sf_next)
+
+        # this is the q_target
+        q_next = config.discount * mask * q_next
+        q_next.add_(rewards)
+        q_next = q_next.detach()
+
+        # this is the psi_target
+        '''
+        one_dim_mask = mask.reshape(-1)
+        for i in range(len(one_dim_mask)):
+            sf_next[i, :] = sf_next[i, :] * one_dim_mask[i]
+        '''
+        
+
+        one_dim_mask = mask.reshape(mask.shape[0], -1)
+        one_dim_mask = one_dim_mask.expand(one_dim_mask.shape[0], sf_next.shape[-1])
+        sf_next = sf_next * one_dim_mask
+        sf_next.add_(phi)
+
+        # get current values 
+        sf = self.network.sf(phi, actions)
+        q = self.network.critic(sf)
+
+        # backprop
+        # for critic
+        critic_loss = (q - q_next).pow(2).mul(0.5).sum(-1).mean()
+        self.network.zero_grad()
+        critic_loss.backward(retain_graph=True)
+        self.network.critic_opt.step()
+
+        # for SF
+        sf_loss = (sf - sf_next).pow(2).mul(0.5).sum(-1).mean()
+        self.network.zero_grad()
+        sf_loss.backward()
+        self.network.sf_opt.step()
+
+        # for actor
+        phi = self.network.feature(states)
+        action = self.network.actor(phi)
+        sf = self.network.sf(phi.detach(), action)
+        policy_loss = -self.network.critic(sf).mean()
+        
+        self.network.zero_grad()
+        policy_loss.backward()
+        self.network.actor_opt.step()
+
+        self.soft_update(self.target_network, self.network)
+
+        
+
 
 
 

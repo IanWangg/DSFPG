@@ -87,6 +87,7 @@ class DDPGAgent(BaseAgent):
             critic_loss = (q - q_next).pow(2).mul(0.5).sum(-1).mean()
 
             self.network.zero_grad()
+            # update two model at once (actor and critic)
             critic_loss.backward()
             self.network.critic_opt.step()
 

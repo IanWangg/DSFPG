@@ -6,6 +6,30 @@
 
 from .network_utils import *
 
+class SF_FCBody(nn.Module):
+    def __init__(self, state_dim, hidden_units=(400, 300), gate=F.relu, noisy_linear=False):
+        super(SF_FCBody, self).__init__()
+        dims = (state_dim, ) + hidden_units
+        if noisy_linear:
+            self.layers = nn.ModuleList(
+                [NoisyLinear(dim_in, dim_out) for dim_in, dim_out in zip(dims[:-1], dims[1:])])
+        else:
+            self.layers = nn.ModuleList(
+                [layer_init(nn.Linear(dim_in, dim_out)) for dim_in, dim_out in zip(dims[:-1], dims[1:])])
+        
+        self.gate = gate
+        self.feature_dim = dims[-1]
+        self.noisy_linear = noisy_linear
+
+    def reset_noise(self):
+        if self.noisy_linear:
+            for layer in self.layers:
+                layer.reset_noise()
+    
+    def forward(self, x):
+        for layer in self.layers:
+            x = self.gate(layer(x))
+        return x
 
 class NatureConvBody(nn.Module):
     def __init__(self, in_channels=4, noisy_linear=False):
