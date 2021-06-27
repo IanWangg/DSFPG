@@ -1,6 +1,7 @@
 import sys
 sys.path.append('../')
 from deep_rl import *
+from deep_rl.agent.DDPG_offline import DDPGAgent_offline
 
 select_device(0)
 
@@ -12,7 +13,7 @@ def ddpg_continuous(**kwargs):
 
     config.task_fn = lambda: Task(config.game)
     config.eval_env = config.task_fn()
-    config.max_steps = int(1e6)
+    config.max_steps = int(3e6)
     config.eval_interval = int(1e4)
     config.eval_episodes = 20
 
@@ -31,4 +32,4 @@ def ddpg_continuous(**kwargs):
     config.target_network_mix = 5e-3
     run_steps(DDPGAgent(config))
 
-ddpg_continuous(game='Hopper-v2')
+ddpg_continuous(game='Hopper-v2', dataset_name='hopper-expert-v0')
