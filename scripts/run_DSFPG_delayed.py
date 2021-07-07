@@ -2,7 +2,12 @@ import sys
 sys.path.append('../')
 from deep_rl import *
 from deep_rl.agent.DSFPG_agent import DSFPGAgent
+from deep_rl.agent.DSFPG_delayed import DSFPGAgent_td3
 
+import sys
+sys.path.append('../')
+from deep_rl import *
+from deep_rl.agent.DSFPG_agent import DSFPGAgent
 
 select_device(0)
 
@@ -22,7 +27,7 @@ def dsfpg_online(**kwargs):
     config.max_steps = int(1e6)
     config.eval_interval = int(1e4)
     config.eval_episodes = 10
-
+    config.td3_delay = 2
     
     config.network_fn = lambda: DSFPGNet(
         config.state_dim, config.action_dim,
@@ -50,12 +55,22 @@ def dsfpg_online(**kwargs):
     # config.pre_training_steps = int(1e6)
     config.target_network_mix = 5e-3
     # run_steps(DSFPGAgent(config))
-    agent = DSFPGAgent(config)
+    agent = DSFPGAgent_td3(config)
     # config = agent.config
     agent_name = agent.__class__.__name__
     t0 = time.time()
     agent.pre_training = False
-    
+    '''while True:
+        if config.log_interval and not agent.unsupervised_steps % config.log_interval:
+            agent.logger.info('steps %d, %.2f steps/s' % (agent.unsupervised_steps, config.log_interval / (time.time() - t0)))
+            t0 = time.time()
+        if config.max_steps and agent.unsupervised_steps >= config.pre_training_steps:
+            agent.close()
+            break
+        agent.step()
+        agent.switch_task()'''
+
+
     print('==================== Start RL Phase =====================')
     agent.pre_training = False
     while True:

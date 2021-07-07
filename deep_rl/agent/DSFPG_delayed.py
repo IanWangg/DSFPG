@@ -19,7 +19,7 @@ Difference from DDPG :
 1. Q value is calculated by SF network
 '''
 
-class DSFPGAgent(BaseAgent):
+class DSFPGAgent_td3(BaseAgent):
     def __init__(self, config):
         BaseAgent.__init__(self, config)
         self.config = config
@@ -38,10 +38,12 @@ class DSFPGAgent(BaseAgent):
 
         # flag that idicate offline/online setting
         self.offline = config.offline
+        self.dataset_name = config.dataset_name
+        self.dataset = None
+
+        # self.returns = []
 
         if self.offline:
-            self.dataset_name = config.dataset_name
-            self.dataset = None
             self.env = gym.make(self.dataset_name)
             self.dataset = self.env.get_dataset()
             self.offline_replay_init()
@@ -111,6 +113,7 @@ class DSFPGAgent(BaseAgent):
             next_state, reward, done, info = self.task.step(action)
             next_state = self.config.state_normalizer(next_state)
 
+            # print('recording online returns')
             self.record_online_return(info)
             reward = self.config.reward_normalizer(reward)
 
@@ -168,17 +171,19 @@ class DSFPGAgent(BaseAgent):
             sf_loss = (sf - sf_next).pow(2).mul(0.5).sum(-1).mean()
             # sf_loss = sf_loss + critic_loss
             self.network.zero_grad()
-            sf_loss.backward()
+            sf_loss.backward(retain_graph=True)
             self.network.sf_opt.step()
 
-            # for actor
-            phi = self.network.feature(states)
-            action = self.network.actor(phi)
-            sf = self.network.sf(phi.detach(), action)
-            policy_loss = -self.network.critic(sf).mean()
-            
-            self.network.zero_grad()
-            policy_loss.backward()
-            self.network.actor_opt.step()
+            # self.soft_update(self.target_network, self.network)
+            if self.total_steps % config.td3_delay:
+                # for actor
+                phi = self.network.feature(states)
+                action = self.network.actor(phi)
+                sf = self.network.sf(phi.detach(), action)
+                policy_loss = -self.network.critic(sf).mean()
+                
+                self.network.zero_grad()
+                policy_loss.backward()
+                self.network.actor_opt.step()
 
-            self.soft_update(self.target_network, self.network)
+                self.soft_update(self.target_network, self.network)

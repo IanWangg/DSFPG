@@ -8,9 +8,11 @@ from ..network import *
 from ..component import *
 from .BaseAgent import *
 import torchvision
+import gym
+import d4rl
 
 
-class DDPGAgent(BaseAgent):
+class DDPGAgent_offline(BaseAgent):
     def __init__(self, config):
         BaseAgent.__init__(self, config)
         self.config = config
@@ -22,6 +24,43 @@ class DDPGAgent(BaseAgent):
         self.random_process = config.random_process_fn()
         self.total_steps = 0
         self.state = None
+
+        # flag that idicate offline/online setting
+        
+        self.dataset_name = config.dataset_name
+        self.dataset = None
+
+        
+        self.env = gym.make(self.dataset_name)
+        self.dataset = self.env.get_dataset()
+        self.offline_replay_init()
+        del self.env
+        del self.dataset
+
+    
+    def offline_replay_init(self):
+        # dataset must be created
+        assert self.dataset is not None
+        actions = self.dataset['actions']
+        observations = self.dataset['observations']
+        terminals = self.dataset['terminals']
+        rewards = self.dataset['rewards']
+
+        for i in range(len(rewards) - 1):
+            # if the next state is still within the same episode
+            if not terminals[i]:
+                obs = observations[i].reshape(1, -1)
+                action = actions[i].reshape(1, -1)
+                next_obs = observations[i].reshape(1, -1)
+                reward = rewards[i].reshape(1, -1)
+                done = terminals[i+1].reshape(1, -1)
+                self.replay.feed(dict(
+                    state=obs,
+                    action=action,
+                    reward=reward,
+                    next_state=next_obs,
+                    mask=1-np.asarray(done, dtype=np.int32),
+                ))
 
     def soft_update(self, target, src):
         for target_param, param in zip(target.parameters(), src.parameters()):
@@ -38,6 +77,7 @@ class DDPGAgent(BaseAgent):
 
     def step(self):
         config = self.config
+        '''
         if self.state is None:
             self.random_process.reset_states()
             self.state = self.task.reset()
@@ -66,9 +106,10 @@ class DDPGAgent(BaseAgent):
         if done[0]:
             self.random_process.reset_states()
         self.state = next_state
+        '''
         self.total_steps += 1
 
-        if self.total_steps >= config.warm_up:
+        if self.replay.size() >= config.warm_up:
             transitions = self.replay.sample()
             states = tensor(transitions.state)
             actions = tensor(transitions.action)
@@ -91,8 +132,6 @@ class DDPGAgent(BaseAgent):
             critic_loss.backward()
             self.network.critic_opt.step()
 
-            # here since we need to update actor weights, we need the actor to actually
-            # produce the action
             phi = self.network.feature(states)
             action = self.network.actor(phi)
             policy_loss = -self.network.critic(phi.detach(), action).mean()

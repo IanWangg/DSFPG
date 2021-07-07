@@ -29,21 +29,9 @@ def dsfpg_offline(**kwargs):
         actor_body=FCBody(config.state_dim, (400, 300), gate=F.relu),
         critic_body=SF_FCBody(config.state_dim, (400, 300), gate=F.relu, linear=True),
         sf_body=FCBody(config.state_dim+config.action_dim, (400, 300), gate=F.relu),
-        actor_opt_fn=lambda params: torch.optim.Adam(params, lr=1e-3),
-        critic_opt_fn=lambda params: torch.optim.Adam(params, lr=1e-3),
-        sf_opt_fn=lambda params: torch.optim.Adam(params, lr=1e-3))
-
-    '''config.history_length = 1
-    config.batch_size = 10
-    config.discount = 0.99
-    config.max_steps = int(1e6)
-    replay_kwargs = dict(
-        memory_size=int(1e4),
-        batch_size=config.batch_size,
-        n_step=config.n_step,
-        discount=config.discount,
-        history_length=config.history_length)
-    config.replay_fn = lambda: ReplayWrapper(config.replay_cls, replay_kwargs, config.async_replay)'''
+        actor_opt_fn=lambda params: torch.optim.Adam(params, lr=1e-4),
+        critic_opt_fn=lambda params: torch.optim.Adam(params, lr=1e-4),
+        sf_opt_fn=lambda params: torch.optim.Adam(params, lr=1e-4))
 
     config.replay_fn = lambda: UniformReplay(memory_size=int(1e6), batch_size=256)
     config.discount = 0.99
@@ -57,20 +45,8 @@ def dsfpg_offline(**kwargs):
     # config = agent.config
     agent_name = agent.__class__.__name__
     t0 = time.time()
-    agent.pre_training = True
-    while True:
-        if config.log_interval and not agent.unsupervised_steps % config.log_interval:
-            agent.logger.info('steps %d, %.2f steps/s' % (agent.unsupervised_steps, config.log_interval / (time.time() - t0)))
-            t0 = time.time()
-        if config.max_steps and agent.unsupervised_steps >= config.pre_training_steps:
-            agent.close()
-            break
-        agent.step()
-        agent.switch_task()
-
 
     print('==================== Start RL Phase =====================')
-    agent.pre_training = False
     while True:
         if config.save_interval and not agent.total_steps % config.save_interval:
             agent.save('data/%s-%s-%d' % (agent_name, config.tag, agent.total_steps))
